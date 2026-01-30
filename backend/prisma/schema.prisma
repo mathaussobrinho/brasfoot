@@ -1,0 +1,179 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL") || "file:./dev.db"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  nome          String
+  sobrenome     String
+  login         String    @unique
+  email         String    @unique
+  senha         String
+  tecnicoOverall Int     @default(50)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  jogadores     Jogador[]
+  gachaLogs     GachaLog[]
+  passeTemporada PasseTemporada?
+  compras       Compra[]
+  leiloes       Leilao[]
+  lances        Lance[]
+  partidas      Partida[] @relation("PartidasJogador1")
+  partidas2     Partida[] @relation("PartidasJogador2")
+  clube         Clube?
+}
+
+model Jogador {
+  id            String   @id @default(cuid())
+  nome          String
+  posicao       String   // Goleiro, Zagueiro, Lateral D, Lateral E, Volante, Meia, Atacante
+  posicaoCompleta String // Ex: "Lateral D", "Lateral E", "Meia Ofensivo", etc
+  raridade      String   // normal, raro, epico, lendario
+  overall       Int
+  imagem        String
+  timeAtual     String?  // Time atual do jogador
+  userId        String
+  emLeilao      Boolean  @default(false)
+  precoVendaDireta Float?
+  createdAt     DateTime @default(now())
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leilao        Leilao?
+  
+  @@index([userId])
+  @@index([emLeilao])
+}
+
+model GachaLog {
+  id            String   @id @default(cuid())
+  userId        String
+  jogadorId     String?
+  raridade      String
+  timestamp     DateTime @default(now())
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+model PasseTemporada {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  dataInicio    DateTime @default(now())
+  dataFim       DateTime
+  ativo         Boolean  @default(true)
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Compra {
+  id            String   @id @default(cuid())
+  userId        String
+  tipo          String   // "tiros" ou "passe"
+  quantidade    Int?
+  valor         Float
+  timestamp     DateTime @default(now())
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+model TirosDiarios {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  tirosUsados   Int      @default(0)
+  tirosComprados Int     @default(0)
+  ultimoReset   DateTime @default(now())
+  
+  @@index([userId])
+}
+
+model Leilao {
+  id            String   @id @default(cuid())
+  jogadorId     String   @unique
+  userId        String   // Dono do jogador
+  lanceAtual   Float
+  userIdLanceAtual String? // Quem deu o lance atual
+  dataInicio    DateTime @default(now())
+  dataFim       DateTime // 1 minuto após último lance
+  vendido       Boolean  @default(false)
+  
+  jogador       Jogador  @relation(fields: [jogadorId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lances        Lance[]
+  
+  @@index([userId])
+  @@index([vendido])
+}
+
+model Lance {
+  id            String   @id @default(cuid())
+  leilaoId      String
+  userId        String
+  valor         Float
+  timestamp     DateTime @default(now())
+  
+  leilao        Leilao  @relation(fields: [leilaoId], references: [id], onDelete: Cascade)
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([leilaoId])
+  @@index([userId])
+}
+
+model Clube {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  nome          String
+  sigla         String
+  escudo        String   // URL ou nome do escudo
+  formacao      String   @default("4-4-2") // 4-4-2, 4-3-3, 3-5-2, etc
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  escalacao     Escalacao[]
+  
+  @@index([userId])
+}
+
+model Escalacao {
+  id            String   @id @default(cuid())
+  clubeId       String
+  jogadorId     String
+  posicao       Int      // Posição na escalação (1-11 para titulares, 12+ para reservas)
+  isTitular     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  
+  clube         Clube    @relation(fields: [clubeId], references: [id], onDelete: Cascade)
+  
+  @@unique([clubeId, jogadorId])
+  @@index([clubeId])
+}
+
+model Partida {
+  id            String   @id @default(cuid())
+  jogador1Id    String
+  jogador2Id    String?  // null se for contra bot
+  tipo          String   // "bot" ou "ranqueado"
+  resultado1     Int      @default(0)
+  resultado2     Int      @default(0)
+  vencedorId    String?
+  detalhes      String?  // JSON com detalhes da partida
+  timestamp     DateTime @default(now())
+  
+  jogador1      User     @relation("PartidasJogador1", fields: [jogador1Id], references: [id], onDelete: Cascade)
+  jogador2      User?    @relation("PartidasJogador2", fields: [jogador2Id], references: [id], onDelete: Cascade)
+  
+  @@index([jogador1Id])
+  @@index([jogador2Id])
+}
