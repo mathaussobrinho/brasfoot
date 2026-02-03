@@ -5,9 +5,18 @@ export interface JogadorReal {
   posicao: string
   posicaoCompleta: string
   timeAtual: string
-  raridade: 'normal' | 'raro' | 'epico' | 'lendario'
+  raridade: 'normal' | 'raro' | 'epico' | 'lendario' | 'prismatico'
   overall: number
 }
+
+// Jogadores Prismáticos (Overall 95-99) - 1% de chance
+const JOGADORES_PRISMATICOS: JogadorReal[] = [
+  { nome: 'Ronaldinho', posicao: 'Meia', posicaoCompleta: 'Meia Ofensivo', timeAtual: 'Aposentado', raridade: 'prismatico', overall: 97 },
+  { nome: 'Ronaldo Fenômeno', posicao: 'Atacante', posicaoCompleta: 'Centroavante', timeAtual: 'Aposentado', raridade: 'prismatico', overall: 98 },
+  { nome: 'Kaká', posicao: 'Meia', posicaoCompleta: 'Meia Ofensivo', timeAtual: 'Aposentado', raridade: 'prismatico', overall: 96 },
+  { nome: 'Zidane', posicao: 'Meia', posicaoCompleta: 'Meia Central', timeAtual: 'Aposentado', raridade: 'prismatico', overall: 98 },
+  { nome: 'Lothar Matthäus', posicao: 'Meia', posicaoCompleta: 'Meia Central', timeAtual: 'Aposentado', raridade: 'prismatico', overall: 96 }
+]
 
 // Jogadores Lendários (Overall 86-99)
 const JOGADORES_LENDARIOS: JogadorReal[] = [
@@ -125,10 +134,13 @@ const JOGADORES_NORMAIS: JogadorReal[] = [
 ]
 
 // Função para obter um jogador aleatório de uma raridade específica
-export function obterJogadorReal(raridade: 'normal' | 'raro' | 'epico' | 'lendario'): JogadorReal {
+export function obterJogadorReal(raridade: 'normal' | 'raro' | 'epico' | 'lendario' | 'prismatico'): JogadorReal {
   let lista: JogadorReal[] = []
 
   switch (raridade) {
+    case 'prismatico':
+      lista = JOGADORES_PRISMATICOS
+      break
     case 'lendario':
       lista = JOGADORES_LENDARIOS
       break

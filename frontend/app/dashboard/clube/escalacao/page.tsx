@@ -15,6 +15,7 @@ interface Jogador {
   raridade: string
   overall: number
   imagem: string
+  emLeilao?: boolean
 }
 
 export default function EscalacaoPage() {
@@ -177,6 +178,7 @@ export default function EscalacaoPage() {
     
     // Bônus por raridade
     const bonusRaridade: Record<string, number> = {
+      'prismatico': 25,
       'lendario': 15,
       'epico': 10,
       'raro': 5,

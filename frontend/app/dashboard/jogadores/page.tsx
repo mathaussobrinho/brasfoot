@@ -65,7 +65,8 @@ export default function JogadoresPage() {
       normal: 'Normal',
       raro: 'Raro',
       epico: 'Épico',
-      lendario: 'Lendário'
+      lendario: 'Lendário',
+      prismatico: 'Prismático'
     }
     return labels[raridade] || raridade
   }
@@ -155,6 +156,7 @@ export default function JogadoresPage() {
               <option value="raro">Raro</option>
               <option value="epico">Épico</option>
               <option value="lendario">Lendário</option>
+              <option value="prismatico">Prismático</option>
             </select>
           </div>
 

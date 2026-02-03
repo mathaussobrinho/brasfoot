@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { obterJogadoresEscalados } from '@/lib/clube'
 import { atualizarOverallTecnico } from '@/lib/tecnico'
+import { calcularForcaTime, calcularProbabilidadeGol, calcularProbabilidadeDefesa } from '@/lib/forca-time'
 
 interface EventoPartida {
   minuto: number
@@ -40,18 +41,28 @@ export async function simularPartidaDetalhada(
     throw new Error('Você precisa escalar pelo menos 11 jogadores!')
   }
 
-  // Calcula força do time 1
-  const overallMedio1 = titulares1.reduce((sum, j) => sum + j.overall, 0) / titulares1.length
+  // Calcula força do time 1 usando o novo sistema
+  const forcaTime1Obj = calcularForcaTime(titulares1.map(j => ({
+    nome: j.nome,
+    posicao: j.posicao,
+    posicaoCompleta: j.posicaoCompleta,
+    overall: j.overall
+  })))
   const user1 = await prisma.user.findUnique({
     where: { id: userId1 },
     select: { tecnicoOverall: true }
   }) || { tecnicoOverall: 50 }
-  const forcaTime1 = overallMedio1 + (user1.tecnicoOverall / 10)
+  
+  // Ajusta força total com bônus do técnico (até 10% de bônus)
+  const bonusTecnico1 = (user1.tecnicoOverall / 100) * 10
+  const forcaTime1 = Math.min(100, forcaTime1Obj.forcaTotal + bonusTecnico1)
 
   let clube2: any = null
   let titulares2: any[] = []
   let forcaTime2 = 0
 
+  let forcaTime2Obj: any = null
+  
   if (tipo === 'bot') {
     // Bot tem força aleatória
     forcaTime2 = 60 + Math.random() * 20
@@ -61,6 +72,14 @@ export async function simularPartidaDetalhada(
       posicao: 'Jogador',
       posicaoCompleta: 'Jogador'
     }))
+    
+    // Bot tem forças balanceadas
+    forcaTime2Obj = {
+      forcaAtaque: 50 + Math.random() * 20,
+      forcaDefesa: 50 + Math.random() * 20,
+      forcaGoleiro: 50 + Math.random() * 20,
+      forcaMeio: 50 + Math.random() * 20
+    }
   } else {
     // Partida ranqueada
     if (!userId2) {
@@ -82,12 +101,21 @@ export async function simularPartidaDetalhada(
       throw new Error('Oponente não tem 11 jogadores escalados')
     }
 
-    const overallMedio2 = titulares2.reduce((sum: number, j: any) => sum + j.overall, 0) / titulares2.length
+    // Calcula força do time 2 usando o novo sistema
+    const forcaTime2Obj = calcularForcaTime(titulares2.map((j: any) => ({
+      nome: j.nome,
+      posicao: j.posicao,
+      posicaoCompleta: j.posicaoCompleta,
+      overall: j.overall
+    })))
     const user2 = await prisma.user.findUnique({
       where: { id: userId2 },
       select: { tecnicoOverall: true }
     }) || { tecnicoOverall: 50 }
-    forcaTime2 = overallMedio2 + (user2.tecnicoOverall / 10)
+    
+    // Ajusta força total com bônus do técnico (até 10% de bônus)
+    const bonusTecnico2 = (user2.tecnicoOverall / 100) * 10
+    forcaTime2 = Math.min(100, forcaTime2Obj.forcaTotal + bonusTecnico2)
   }
 
   // Gera eventos da partida - apenas 1 evento por minuto
@@ -138,39 +166,103 @@ export async function simularPartidaDetalhada(
   // Cada cartão vermelho reduz a força do time em 5% (time fica com menos jogadores)
   const penalidadeTime1 = cartoesVermelhosTime1 * 0.05
   const penalidadeTime2 = cartoesVermelhosTime2 * 0.05
+  
+  // Ajusta forças por setor com penalidades
+  const forcaAtaque1Ajustada = forcaTime1Obj.forcaAtaque * (1 - penalidadeTime1)
+  const forcaDefesa1Ajustada = forcaTime1Obj.forcaDefesa * (1 - penalidadeTime1)
+  const forcaGoleiro1Ajustada = forcaTime1Obj.forcaGoleiro * (1 - penalidadeTime1)
+  
+  const forcaAtaque2Ajustada = forcaTime2Obj.forcaAtaque * (1 - penalidadeTime2)
+  const forcaDefesa2Ajustada = forcaTime2Obj.forcaDefesa * (1 - penalidadeTime2)
+  const forcaGoleiro2Ajustada = forcaTime2Obj.forcaGoleiro * (1 - penalidadeTime2)
+
+  // Simula gols baseado em probabilidades de ataque vs defesa
+  let gols1 = 0
+  let gols2 = 0
+  
+  // Para cada minuto, calcula chance de gol baseado nas forças
+  for (let minuto = 1; minuto <= 90; minuto++) {
+    // Chance de gol do time 1 (ataque time1 vs defesa time2)
+    const probGol1 = calcularProbabilidadeGol(
+      forcaAtaque1Ajustada,
+      forcaDefesa2Ajustada,
+      forcaGoleiro2Ajustada
+    )
+    
+    // Chance de defesa do time 2
+    const probDefesa2 = calcularProbabilidadeDefesa(
+      forcaGoleiro2Ajustada,
+      forcaAtaque1Ajustada
+    )
+    
+    // Probabilidade final = probGol - (probDefesa * fator)
+    const probFinal1 = Math.max(0.5, probGol1 - (probDefesa2 * 0.2))
+    
+    if (Math.random() * 100 < probFinal1) {
+      const minutoDisponivel = obterMinutoDisponivel()
+      if (minutoDisponivel !== null) {
+        const atacantes = titulares1.filter(j => 
+          j.posicao === 'Atacante' || j.posicaoCompleta.includes('Atacante') || 
+          j.posicaoCompleta.includes('Ponta') || j.posicaoCompleta.includes('Centroavante')
+        )
+        const jogador = atacantes.length > 0 
+          ? atacantes[Math.floor(Math.random() * atacantes.length)]
+          : titulares1[Math.floor(Math.random() * titulares1.length)]
+        
+        eventos.push({
+          minuto: minutoDisponivel,
+          tipo: 'gol',
+          jogador: jogador.nome,
+          time: 1
+        })
+        gols1++
+      }
+    }
+    
+    // Chance de gol do time 2 (ataque time2 vs defesa time1)
+    const probGol2 = calcularProbabilidadeGol(
+      forcaAtaque2Ajustada,
+      forcaDefesa1Ajustada,
+      forcaGoleiro1Ajustada
+    )
+    
+    // Chance de defesa do time 1
+    const probDefesa1 = calcularProbabilidadeDefesa(
+      forcaGoleiro1Ajustada,
+      forcaAtaque2Ajustada
+    )
+    
+    // Probabilidade final = probGol - (probDefesa * fator)
+    const probFinal2 = Math.max(0.5, probGol2 - (probDefesa1 * 0.2))
+    
+    if (Math.random() * 100 < probFinal2) {
+      const minutoDisponivel = obterMinutoDisponivel()
+      if (minutoDisponivel !== null) {
+        const atacantes = tipo === 'bot' 
+          ? titulares2 
+          : titulares2.filter((j: any) => 
+              j.posicao === 'Atacante' || j.posicaoCompleta.includes('Atacante') || 
+              j.posicaoCompleta.includes('Ponta') || j.posicaoCompleta.includes('Centroavante')
+            )
+        const jogador = atacantes.length > 0 
+          ? atacantes[Math.floor(Math.random() * atacantes.length)]
+          : titulares2[Math.floor(Math.random() * titulares2.length)]
+        
+        eventos.push({
+          minuto: minutoDisponivel,
+          tipo: 'gol',
+          jogador: jogador.nome,
+          time: 2
+        })
+        gols2++
+      }
+    }
+  }
+  
+  // Calcula diferenca para estatísticas
   const forcaTime1Ajustada = forcaTime1 * (1 - penalidadeTime1)
   const forcaTime2Ajustada = forcaTime2 * (1 - penalidadeTime2)
-
-  // Simula a partida com forças ajustadas
   const diferenca = forcaTime1Ajustada - forcaTime2Ajustada
-  const gols1 = Math.max(0, Math.floor(2 + diferenca / 10 + (Math.random() * 3 - 1.5)))
-  const gols2 = Math.max(0, Math.floor(2 - diferenca / 10 + (Math.random() * 3 - 1.5)))
-  
-  // Gols do time 1
-  for (let i = 0; i < gols1; i++) {
-    const minuto = obterMinutoDisponivel()
-    if (minuto === null) break
-    const jogador = titulares1[Math.floor(Math.random() * titulares1.length)]
-    eventos.push({
-      minuto,
-      tipo: 'gol',
-      jogador: jogador.nome,
-      time: 1
-    })
-  }
-
-  // Gols do time 2
-  for (let i = 0; i < gols2; i++) {
-    const minuto = obterMinutoDisponivel()
-    if (minuto === null) break
-    const jogador = titulares2[Math.floor(Math.random() * titulares2.length)]
-    eventos.push({
-      minuto,
-      tipo: 'gol',
-      jogador: jogador.nome,
-      time: 2
-    })
-  }
 
   // Chutes, defesas, faltas, escanteios, laterais (eventos comuns)
   // Limita a quantidade para não ultrapassar minutos disponíveis

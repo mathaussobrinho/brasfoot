@@ -12,6 +12,7 @@ module.exports = {
         raro: '#3B82F6',
         epico: '#A855F7',
         lendario: '#F59E0B',
+        prismatico: '#FFD700',
       },
     },
   },

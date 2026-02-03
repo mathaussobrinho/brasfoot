@@ -223,10 +223,11 @@ export default function GachaPage() {
           <div className="mt-6 p-4 bg-blue-50 rounded-lg">
             <h3 className="font-bold text-gray-800 mb-2">Chances de Raridade:</h3>
             <ul className="space-y-1 text-sm">
-              <li>🟦 Normal: 60%</li>
+              <li>🟦 Normal: 59%</li>
               <li>🟦 Raro: 30%</li>
               <li>🟦 Épico: 8%</li>
               <li>🟦 Lendário: 2%</li>
+              <li>✨ Prismático: 1%</li>
             </ul>
           </div>
         </div>

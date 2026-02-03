@@ -31,6 +31,22 @@ export default function LoginPage() {
 
       localStorage.setItem('token', data.token)
       localStorage.setItem('user', JSON.stringify(data.user))
+      localStorage.setItem('userId', data.user.id)
+      
+      // Marca como online
+      try {
+        await fetch('/api/jogadores-online', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${data.token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ acao: 'atualizar-online' })
+        })
+      } catch (err) {
+        // Ignora erro, não é crítico
+      }
+      
       router.push('/dashboard')
     } catch (err) {
       setError('Erro ao conectar com o servidor')

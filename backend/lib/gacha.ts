@@ -2,13 +2,14 @@ import { obterJogadorReal } from './jogadores-reais'
 
 // Sistema de porcentagens do Gacha
 export const GACHA_RATES = {
-  normal: 60,   // 60%
-  raro: 30,     // 30%
-  epico: 8,     // 8%
-  lendario: 2   // 2%
+  normal: 59,      // 59%
+  raro: 30,        // 30%
+  epico: 8,        // 8%
+  lendario: 2,     // 2%
+  prismatico: 1    // 1%
 } as const
 
-export type Raridade = 'normal' | 'raro' | 'epico' | 'lendario'
+export type Raridade = 'normal' | 'raro' | 'epico' | 'lendario' | 'prismatico'
 
 // Nomes de jogadores por posição
 const NOMES_JOGADORES = [
@@ -34,7 +35,8 @@ const OVERALL_BY_RARITY = {
   normal: { min: 50, max: 65 },
   raro: { min: 66, max: 75 },
   epico: { min: 76, max: 85 },
-  lendario: { min: 86, max: 99 }
+  lendario: { min: 86, max: 99 },
+  prismatico: { min: 95, max: 99 }
 }
 
 // Cores das raridades
@@ -42,7 +44,8 @@ export const CORES_RARIDADE = {
   normal: '#9CA3AF',
   raro: '#3B82F6',
   epico: '#A855F7',
-  lendario: '#F59E0B'
+  lendario: '#F59E0B',
+  prismatico: '#FFD700' // Dourado para cartas prismáticas
 }
 
 // Função para gerar um jogador aleatório baseado na raridade
@@ -68,11 +71,14 @@ export function gerarJogador(raridade: Raridade) {
 export function determinarRaridade(): Raridade {
   const random = Math.random() * 100
 
-  if (random < GACHA_RATES.lendario) {
+  // Verifica primeiro a raridade mais rara (prismático)
+  if (random < GACHA_RATES.prismatico) {
+    return 'prismatico'
+  } else if (random < GACHA_RATES.prismatico + GACHA_RATES.lendario) {
     return 'lendario'
-  } else if (random < GACHA_RATES.lendario + GACHA_RATES.epico) {
+  } else if (random < GACHA_RATES.prismatico + GACHA_RATES.lendario + GACHA_RATES.epico) {
     return 'epico'
-  } else if (random < GACHA_RATES.lendario + GACHA_RATES.epico + GACHA_RATES.raro) {
+  } else if (random < GACHA_RATES.prismatico + GACHA_RATES.lendario + GACHA_RATES.epico + GACHA_RATES.raro) {
     return 'raro'
   } else {
     return 'normal'

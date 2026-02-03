@@ -5,7 +5,8 @@ const PRECOS_BASE = {
   normal: 10.0,
   raro: 50.0,
   epico: 200.0,
-  lendario: 1000.0
+  lendario: 1000.0,
+  prismatico: 5000.0
 }
 
 // Calcula o preço de venda direta baseado na raridade e quantas pessoas têm o jogador
@@ -26,7 +27,7 @@ export async function calcularPrecoVendaDireta(jogadorNome: string, raridade: st
   const precoFinal = precoBase * (1 - desconto)
 
   // Garante que o preço nunca seja menor que o da raridade abaixo
-  const raridades = ['normal', 'raro', 'epico', 'lendario']
+  const raridades = ['normal', 'raro', 'epico', 'lendario', 'prismatico']
   const indexAtual = raridades.indexOf(raridade)
   
   if (indexAtual > 0) {

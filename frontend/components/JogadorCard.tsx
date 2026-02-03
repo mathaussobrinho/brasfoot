@@ -20,7 +20,8 @@ export default function JogadorCard({ jogador, tamanho = 'medio' }: JogadorCardP
       normal: 'Normal',
       raro: 'Raro',
       epico: 'Épico',
-      lendario: 'Lendário'
+      lendario: 'Lendário',
+      prismatico: 'Prismático'
     }
     return labels[raridade] || raridade
   }

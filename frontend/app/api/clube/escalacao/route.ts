@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '../@backend/lib/auth'
-import { prisma } from '../@backend/lib/prisma'
-import { salvarEscalacao } from '../@backend/lib/clube'
+import { verifyToken } from '@backend/lib/auth'
+import { prisma } from '@backend/lib/prisma'
+import { salvarEscalacao } from '@backend/lib/clube'
 import { z } from 'zod'
 
 const escalacaoSchema = z.object({

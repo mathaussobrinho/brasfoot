@@ -10,6 +10,7 @@ interface User {
   sobrenome: string
   login: string
   email: string
+  tecnicoOverall?: number
 }
 
 export default function DashboardPage() {

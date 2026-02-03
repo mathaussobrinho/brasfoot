@@ -32,6 +32,26 @@ export default function PartidasPage() {
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const eventosMostradosRef = useRef<EventoPartida[]>([])
   
+  // Estados do matchmaking
+  const [buscandoOponente, setBuscandoOponente] = useState(false)
+  const [matchmakingInterval, setMatchmakingInterval] = useState<NodeJS.Timeout | null>(null)
+  
+  // Estados do sistema de pausa
+  const [pausasRestantes, setPausasRestantes] = useState(3)
+  const [pausadoPorOponente, setPausadoPorOponente] = useState(false)
+  const [statusPartidaInterval, setStatusPartidaInterval] = useState<NodeJS.Timeout | null>(null)
+  
+  // Estado para identificar qual time o jogador atual é (1 ou 2)
+  const [meuTime, setMeuTime] = useState<1 | 2>(1)
+  
+  // Estados do sistema de jogadores online
+  const [jogadoresOnline, setJogadoresOnline] = useState<any[]>([])
+  const [mensagensChat, setMensagensChat] = useState<any[]>([])
+  const [novaMensagem, setNovaMensagem] = useState('')
+  const [enviandoMensagem, setEnviandoMensagem] = useState(false)
+  const [mostrarJogadoresOnline, setMostrarJogadoresOnline] = useState(false)
+  const chatIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  
   // Estados do modal de escalação
   const [mostrarModalEscalacao, setMostrarModalEscalacao] = useState(false)
   const [jogadores, setJogadores] = useState<any[]>([])
@@ -48,8 +68,93 @@ export default function PartidasPage() {
       return
     }
 
+    // Verifica se há partida salva no localStorage
+    const partidaSalva = localStorage.getItem('partidaEmAndamento')
+    if (partidaSalva) {
+      try {
+        const dadosPartida = JSON.parse(partidaSalva)
+        const agora = Date.now()
+        const tempoSalvo = dadosPartida.timestamp || 0
+        const tempoDecorridoSalvo = dadosPartida.tempoDecorrido || 0
+        
+        // Calcula tempo decorrido desde que foi salvo
+        const tempoDecorridoDesdeSalvo = (agora - tempoSalvo) / 1000 // em segundos
+        const novoTempoDecorrido = Math.min(60, tempoDecorridoSalvo + tempoDecorridoDesdeSalvo)
+        
+        // Restaura estado da partida
+        setDetalhesPartida(dadosPartida.detalhes)
+        setEventosCompletos(dadosPartida.detalhes.eventos || [])
+        setEstatisticas(dadosPartida.detalhes.estatisticas)
+        setPlacar(dadosPartida.placar || { time1: 0, time2: 0 })
+        setTempoDecorrido(novoTempoDecorrido)
+        setNoIntervalo(dadosPartida.noIntervalo || false)
+        setPausado(false) // Sempre despausa ao recarregar
+        setJogando(true)
+        setResultado(dadosPartida.resultado)
+        setMeuTime(dadosPartida.meuTime || 1)
+        
+        // Restaura eventos já mostrados
+        if (dadosPartida.eventosMostrados) {
+          eventosMostradosRef.current = dadosPartida.eventosMostrados
+          setEventosMostrados(dadosPartida.eventosMostrados)
+        }
+        
+        // Se a partida ainda não terminou, continua
+        if (novoTempoDecorrido < 60) {
+          // Inicia polling do status da partida se for ranqueada
+          if (dadosPartida.resultado?.partida?.id) {
+            iniciarPollingStatusPartida(dadosPartida.resultado.partida.id)
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao restaurar partida:', error)
+        localStorage.removeItem('partidaEmAndamento')
+      }
+    }
+
     fetchUserData(token)
+    
+    // Atualiza status online
+    atualizarStatusOnline(token)
+    
+    // Inicia polling de jogadores online e chat
+    iniciarPollingJogadoresOnline(token)
+    
+    return () => {
+      // Remove jogador online ao sair
+      if (token) {
+        fetch('/api/jogadores-online', {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).catch(() => {})
+      }
+      
+      if (chatIntervalRef.current) {
+        clearInterval(chatIntervalRef.current)
+      }
+    }
   }, [router])
+
+  // Salva partida no localStorage periodicamente
+  useEffect(() => {
+    if (jogando && detalhesPartida && resultado) {
+      const dadosParaSalvar = {
+        detalhes: detalhesPartida,
+        placar,
+        tempoDecorrido,
+        noIntervalo,
+        pausado,
+        resultado,
+        meuTime,
+        eventosMostrados: eventosMostradosRef.current,
+        timestamp: Date.now()
+      }
+      localStorage.setItem('partidaEmAndamento', JSON.stringify(dadosParaSalvar))
+    } else {
+      // Remove partida salva se não estiver jogando
+      localStorage.removeItem('partidaEmAndamento')
+    }
+  }, [jogando, detalhesPartida, placar, tempoDecorrido, noIntervalo, pausado, resultado, meuTime])
 
   useEffect(() => {
     if (jogando && !pausado && !noIntervalo) {
@@ -61,6 +166,23 @@ export default function PartidasPage() {
           if (novo >= 30 && prev < 30 && !noIntervalo) {
             setNoIntervalo(true)
             setPausado(true)
+            
+            // Marca intervalo no servidor se for partida ranqueada
+            const partidaId = resultado?.partida?.id
+            if (partidaId) {
+              const token = localStorage.getItem('token')
+              if (token) {
+                fetch('/api/partidas/marcar-intervalo', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({ partidaId })
+                }).catch(() => {})
+              }
+            }
+            
             return novo
           }
           
@@ -133,6 +255,112 @@ export default function PartidasPage() {
     }
   }, [jogando, pausado, noIntervalo, detalhesPartida])
 
+  const atualizarStatusOnline = async (token: string) => {
+    try {
+      await fetch('/api/jogadores-online', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ acao: 'atualizar-online' })
+      })
+    } catch (error) {
+      console.error('Erro ao atualizar status online:', error)
+    }
+  }
+
+  const iniciarPollingJogadoresOnline = (token: string) => {
+    const atualizar = async () => {
+      try {
+        const response = await fetch('/api/jogadores-online', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          setJogadoresOnline(data.jogadores || [])
+          setMensagensChat(data.mensagens || [])
+        }
+      } catch (error) {
+        console.error('Erro ao buscar jogadores online:', error)
+      }
+    }
+
+    atualizar() // Primeira atualização imediata
+    chatIntervalRef.current = setInterval(atualizar, 3000) // A cada 3 segundos
+  }
+
+  const enviarMensagem = async () => {
+    if (!novaMensagem.trim() || enviandoMensagem) return
+
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    setEnviandoMensagem(true)
+
+    try {
+      const response = await fetch('/api/jogadores-online', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          acao: 'enviar-mensagem',
+          mensagem: novaMensagem
+        })
+      })
+
+      if (response.ok) {
+        setNovaMensagem('')
+        // Atualiza mensagens imediatamente
+        iniciarPollingJogadoresOnline(token)
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Erro ao enviar mensagem')
+      }
+    } catch (error) {
+      alert('Erro ao conectar com o servidor')
+    } finally {
+      setEnviandoMensagem(false)
+    }
+  }
+
+  const desafiarJogador = async (oponenteId: string, tipo: 'amistoso' | 'ranqueado') => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    try {
+      const response = await fetch('/api/partidas/desafiar', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          oponenteId,
+          tipo
+        })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        alert(data.error || 'Erro ao desafiar jogador')
+        return
+      }
+
+      if (data.partida) {
+        setResultado(data.partida)
+        iniciarJogo(data.partida)
+        await fetchUserData(token)
+      }
+    } catch (error) {
+      alert('Erro ao conectar com o servidor')
+    }
+  }
+
   const fetchUserData = async (token: string) => {
     try {
       const response = await fetch('/api/user', {
@@ -151,6 +379,10 @@ export default function PartidasPage() {
 
       const data = await response.json()
       setTecnicoOverall(data.user.tecnicoOverall || 50)
+      // Armazena userId para uso no polling
+      if (data.user.id) {
+        localStorage.setItem('userId', data.user.id)
+      }
     } catch (error) {
       console.error('Erro ao buscar dados:', error)
     }
@@ -266,12 +498,61 @@ export default function PartidasPage() {
     setTempoDecorrido(0)
     setNoIntervalo(false)
     setPausado(false)
+    setPausasRestantes(3)
+    setPausadoPorOponente(false)
     setJogando(true)
+    
+    // Identifica qual time o jogador atual é
+    const userId = localStorage.getItem('userId')
+    if (dadosPartida.partida) {
+      if (dadosPartida.partida.jogador1Id === userId) {
+        setMeuTime(1)
+      } else if (dadosPartida.partida.jogador2Id === userId) {
+        setMeuTime(2)
+      }
+    }
+    
+    // Inicia polling do status da partida se for ranqueada
+    if (dadosPartida.partida?.id) {
+      iniciarPollingStatusPartida(dadosPartida.partida.id)
+    }
   }
 
-  const continuarSegundoTempo = () => {
-    setNoIntervalo(false)
-    setPausado(false)
+  const continuarSegundoTempo = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    const partidaId = resultado?.partida?.id
+    if (!partidaId) {
+      // Se não for partida ranqueada, apenas continua localmente
+      setNoIntervalo(false)
+      setPausado(false)
+      return
+    }
+
+    // Se for partida ranqueada, sincroniza com o servidor
+    try {
+      const response = await fetch('/api/partidas/continuar-segundo-tempo', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ partidaId })
+      })
+
+      const data = await response.json()
+      
+      if (data.sucesso) {
+        setNoIntervalo(false)
+        setPausado(false)
+      }
+    } catch (error) {
+      console.error('Erro ao continuar segundo tempo:', error)
+      // Continua localmente mesmo com erro
+      setNoIntervalo(false)
+      setPausado(false)
+    }
   }
 
   const handleJogarBot = async () => {
@@ -309,11 +590,13 @@ export default function PartidasPage() {
     const token = localStorage.getItem('token')
     if (!token) return
 
+    setBuscandoOponente(true)
     setJogando(false)
     setResultado(null)
 
     try {
-      const response = await fetch('/api/partidas/ranqueado', {
+      // Entra na fila
+      const entrarResponse = await fetch('/api/partidas/matchmaking', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -321,20 +604,168 @@ export default function PartidasPage() {
         }
       })
 
-      const data = await response.json()
+      const entrarData = await entrarResponse.json()
 
-      if (!response.ok) {
-        alert(data.error || 'Erro ao jogar partida')
+      if (!entrarResponse.ok) {
+        alert(entrarData.error || 'Erro ao entrar na fila')
+        setBuscandoOponente(false)
         return
       }
 
-      setResultado(data)
-      iniciarJogo(data)
-      await fetchUserData(token)
+      // Inicia polling para verificar se encontrou oponente
+      const interval = setInterval(async () => {
+        try {
+          const statusResponse = await fetch('/api/partidas/matchmaking', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          })
+
+          const statusData = await statusResponse.json()
+
+          if (statusData.encontrou && statusData.partida) {
+            // Encontrou oponente!
+            clearInterval(interval)
+            setMatchmakingInterval(null)
+            setBuscandoOponente(false)
+            
+            setResultado(statusData.partida)
+            iniciarJogo(statusData.partida)
+            
+            // Inicia polling do status da partida (para pausa)
+            iniciarPollingStatusPartida(statusData.partida.partida?.id)
+            
+            await fetchUserData(token)
+          }
+        } catch (error) {
+          console.error('Erro ao verificar matchmaking:', error)
+        }
+      }, 2000) // Verifica a cada 2 segundos
+
+      setMatchmakingInterval(interval)
+    } catch (error) {
+      alert('Erro ao conectar com o servidor')
+      setBuscandoOponente(false)
+    }
+  }
+
+  const cancelarBusca = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    if (matchmakingInterval) {
+      clearInterval(matchmakingInterval)
+      setMatchmakingInterval(null)
+    }
+
+    try {
+      await fetch('/api/partidas/matchmaking', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+    } catch (error) {
+      console.error('Erro ao cancelar busca:', error)
+    }
+
+    setBuscandoOponente(false)
+  }
+
+  const iniciarPollingStatusPartida = (partidaId: string | undefined) => {
+    if (!partidaId) return
+
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/partidas/matchmaking?partidaId=${partidaId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+
+        const data = await response.json()
+
+        if (data.pausado !== undefined) {
+          setPausado(data.pausado)
+          setPausasRestantes(data.pausasRestantes || 3)
+          
+          // Se foi pausado por outro jogador
+          if (data.pausado && data.pausadoPor) {
+            const userId = localStorage.getItem('userId')
+            if (data.pausadoPor !== userId) {
+              setPausadoPorOponente(true)
+            } else {
+              setPausadoPorOponente(false)
+            }
+          } else {
+            setPausadoPorOponente(false)
+          }
+        }
+        
+        // Sincroniza intervalo
+        if (data.noIntervalo !== undefined) {
+          setNoIntervalo(data.noIntervalo)
+        }
+      } catch (error) {
+        console.error('Erro ao verificar status da partida:', error)
+      }
+    }, 1000) // Verifica a cada 1 segundo
+
+    setStatusPartidaInterval(interval)
+  }
+
+  const handlePausarPartida = async () => {
+    if (pausasRestantes <= 0) {
+      alert('Você já usou todas as suas 3 pausas!')
+      return
+    }
+
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    const partidaId = resultado?.partida?.id
+    if (!partidaId) return
+
+    try {
+      const response = await fetch('/api/partidas/matchmaking', {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          partidaId,
+          acao: pausado ? 'despausar' : 'pausar'
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.sucesso) {
+        setPausado(data.pausado)
+        setPausasRestantes(data.pausasRestantes || 0)
+      } else {
+        alert(data.error || 'Erro ao pausar partida')
+      }
     } catch (error) {
       alert('Erro ao conectar com o servidor')
     }
   }
+
+  // Limpa intervals ao desmontar
+  useEffect(() => {
+    return () => {
+      if (matchmakingInterval) {
+        clearInterval(matchmakingInterval)
+      }
+      if (statusPartidaInterval) {
+        clearInterval(statusPartidaInterval)
+      }
+    }
+  }, [matchmakingInterval, statusPartidaInterval])
 
   const formatarTempo = (segundos: number) => {
     if (segundos < 30) {
@@ -352,8 +783,6 @@ export default function PartidasPage() {
     }
   }
 
-  const tempoJogo = obterTempoJogo()
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-500 to-blue-600 p-4">
       <div className="max-w-6xl mx-auto">
@@ -368,7 +797,7 @@ export default function PartidasPage() {
             </Link>
           </div>
 
-          {!jogando && !resultado && (
+          {!jogando && !resultado && !buscandoOponente && (
             <>
               <div className="mb-6 p-4 bg-purple-100 rounded-lg">
                 <p className="text-gray-700 font-semibold mb-1">Overall do Técnico</p>
@@ -406,6 +835,101 @@ export default function PartidasPage() {
                 </div>
               </div>
 
+              {/* Seção de Jogadores Online */}
+              <div className="mb-6 bg-white rounded-lg border-2 border-gray-300 overflow-hidden">
+                <button
+                  onClick={() => setMostrarJogadoresOnline(!mostrarJogadoresOnline)}
+                  className="w-full p-4 bg-gray-100 hover:bg-gray-200 transition flex items-center justify-between"
+                >
+                  <h2 className="text-xl font-bold text-gray-800">
+                    👥 Jogadores Online ({jogadoresOnline.length})
+                  </h2>
+                  <span className="text-2xl">{mostrarJogadoresOnline ? '▼' : '▶'}</span>
+                </button>
+
+                {mostrarJogadoresOnline && (
+                  <div className="p-4">
+                    {/* Chat */}
+                    <div className="mb-4 bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto">
+                      <h3 className="font-bold text-gray-800 mb-2">💬 Chat</h3>
+                      <div className="space-y-2 mb-3">
+                        {mensagensChat.map((msg) => (
+                          <div key={msg.id} className="text-sm">
+                            <span className="font-semibold text-blue-600">{msg.login}:</span>
+                            <span className="text-gray-700 ml-2">{msg.mensagem}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={novaMensagem}
+                          onChange={(e) => setNovaMensagem(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && enviarMensagem()}
+                          placeholder="Digite sua mensagem..."
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          maxLength={500}
+                        />
+                        <button
+                          onClick={enviarMensagem}
+                          disabled={enviandoMensagem || !novaMensagem.trim()}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
+                        >
+                          Enviar
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Lista de Jogadores */}
+                    <div>
+                      <h3 className="font-bold text-gray-800 mb-2">Jogadores Disponíveis</h3>
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {jogadoresOnline.length === 0 ? (
+                          <p className="text-gray-500 text-sm">Nenhum jogador online no momento</p>
+                        ) : (
+                          jogadoresOnline.map((jogador) => {
+                            const userId = localStorage.getItem('userId')
+                            if (jogador.userId === userId) return null // Não mostra a si mesmo
+
+                            return (
+                              <div
+                                key={jogador.userId}
+                                className="bg-gray-50 p-3 rounded-lg flex items-center justify-between"
+                              >
+                                <div>
+                                  <p className="font-semibold text-gray-800">
+                                    {jogador.nome} {jogador.sobrenome} (@{jogador.login})
+                                  </p>
+                                  {jogador.clube && (
+                                    <p className="text-sm text-gray-600">
+                                      {jogador.clube.nome} ({jogador.clube.sigla}) - Overall: {jogador.tecnicoOverall}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => desafiarJogador(jogador.userId, 'amistoso')}
+                                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm transition"
+                                  >
+                                    🎮 Amistoso
+                                  </button>
+                                  <button
+                                    onClick={() => desafiarJogador(jogador.userId, 'ranqueado')}
+                                    className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-sm transition"
+                                  >
+                                    🏆 Ranqueado
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="mt-6 p-4 bg-blue-50 rounded-lg">
                 <h3 className="font-bold text-gray-800 mb-2">ℹ️ Como Funciona:</h3>
                 <ul className="text-sm text-gray-600 space-y-1">
@@ -419,6 +943,33 @@ export default function PartidasPage() {
             </>
           )}
 
+          {/* Tela de busca de oponente */}
+          {buscandoOponente && (
+            <div className="flex flex-col items-center justify-center min-h-[400px]">
+              <div className="text-center">
+                <div className="mb-6">
+                  <div className="inline-block animate-spin text-6xl mb-4">⚽</div>
+                  <h2 className="text-3xl font-bold text-gray-800 mb-2">Procurando jogador...</h2>
+                  <p className="text-gray-600">Aguarde enquanto encontramos um oponente para você</p>
+                </div>
+                
+                {/* Animação de pontos */}
+                <div className="flex justify-center gap-2 mb-6">
+                  <div className="w-3 h-3 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
+                  <div className="w-3 h-3 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                  <div className="w-3 h-3 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                </div>
+
+                <button
+                  onClick={cancelarBusca}
+                  className="bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg transition"
+                >
+                  Cancelar Busca
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Jogo em Tempo Real */}
           {jogando && detalhesPartida && (
             <div className="space-y-6">
@@ -426,7 +977,10 @@ export default function PartidasPage() {
               <div className="text-center relative">
                 <div className="mb-4">
                   <div className="text-4xl font-bold text-gray-800 mb-2">
-                    {tempoJogo.tempo}' - {tempoJogo.periodo}º Tempo
+                    {(() => {
+                      const tempo = obterTempoJogo()
+                      return `${tempo.tempo}' - ${tempo.periodo}º Tempo`
+                    })()}
                   </div>
                   {pausado && !noIntervalo && (
                     <p className="text-yellow-600 font-semibold">⏸️ PAUSADO</p>
@@ -477,20 +1031,28 @@ export default function PartidasPage() {
                 </div>
               </div>
 
-              {/* Botão Pausar/Continuar - Fixo no meio (não aparece durante intervalo) */}
-              {!noIntervalo && (
-                <div className="flex justify-center mb-4">
+              {/* Botão Pausar/Continuar - Fixo no meio (não aparece durante intervalo ou no final) */}
+              {!noIntervalo && tempoDecorrido < 60 && (
+                <div className="flex flex-col items-center gap-2 mb-4">
                   <button
-                    onClick={() => setPausado(!pausado)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg transition text-lg shadow-lg"
+                    onClick={handlePausarPartida}
+                    disabled={pausado && pausadoPorOponente}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-lg transition text-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {pausado ? '▶️ Continuar' : '⏸️ Pausar'}
+                    {pausado 
+                      ? (pausadoPorOponente ? '⏸️ Pausado pelo oponente' : '▶️ Continuar')
+                      : '⏸️ Pausar'}
                   </button>
+                  {!pausadoPorOponente && (
+                    <p className="text-sm text-gray-600">
+                      Pausas restantes: {pausasRestantes}/3
+                    </p>
+                  )}
                 </div>
               )}
 
               {/* Opção de mudar escalação quando pausado (exceto durante intervalo) */}
-              {pausado && !noIntervalo && (
+              {pausado && !noIntervalo && !pausadoPorOponente && (
                 <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-6 mb-4">
                   <h3 className="text-xl font-bold text-gray-800 mb-3 text-center">⚙️ Jogo Pausado</h3>
                   <p className="text-gray-700 mb-4 text-center">Você pode alterar sua escalação agora.</p>
@@ -502,6 +1064,13 @@ export default function PartidasPage() {
                       📋 Mudar Escalação
                     </button>
                   </div>
+                </div>
+              )}
+              
+              {pausado && pausadoPorOponente && (
+                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6 mb-4">
+                  <h3 className="text-xl font-bold text-gray-800 mb-3 text-center">⏸️ Jogo Pausado pelo Oponente</h3>
+                  <p className="text-gray-700 mb-4 text-center">Aguarde o oponente continuar o jogo...</p>
                 </div>
               )}
 
@@ -544,7 +1113,7 @@ export default function PartidasPage() {
                     {eventosMostrados.map((evento, idx) => (
                       <div key={idx} className="text-sm">
                         {evento.tipo === 'gol' && (
-                          <p className="text-green-700 font-semibold">
+                          <p className={`font-semibold ${evento.time === meuTime ? 'text-green-700' : 'text-red-700'}`}>
                             ⚽ {formatarTempo((evento.minuto / 90) * 60)} - GOOOL! {evento.jogador} ({evento.time === 1 ? detalhesPartida.clube1.sigla : detalhesPartida.clube2.sigla})
                           </p>
                         )}
@@ -631,7 +1200,7 @@ export default function PartidasPage() {
                     {eventosMostrados
                       .filter(e => e.tipo === 'gol')
                       .map((evento, idx) => (
-                        <p key={idx} className="text-center text-gray-700">
+                        <p key={idx} className={`text-center font-semibold ${evento.time === meuTime ? 'text-green-700' : 'text-red-700'}`}>
                           {formatarTempo((evento.minuto / 90) * 60)}' - {evento.jogador} ({evento.time === 1 ? detalhesPartida.clube1.sigla : detalhesPartida.clube2.sigla})
                         </p>
                       ))}
@@ -658,12 +1227,24 @@ export default function PartidasPage() {
                   </p>
                   <button
                     onClick={() => {
+                      // Limpa intervals
+                      if (statusPartidaInterval) {
+                        clearInterval(statusPartidaInterval)
+                        setStatusPartidaInterval(null)
+                      }
+                      
+                      // Remove partida salva
+                      localStorage.removeItem('partidaEmAndamento')
+                      
                       setJogando(false)
                       setTempoDecorrido(0)
                       eventosMostradosRef.current = []
                       setEventosMostrados([])
                       setPlacar({ time1: 0, time2: 0 })
                       setResultado(null)
+                      setPausado(false)
+                      setPausasRestantes(3)
+                      setPausadoPorOponente(false)
                     }}
                     className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition"
                   >
