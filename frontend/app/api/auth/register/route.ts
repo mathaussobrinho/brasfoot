@@ -14,7 +14,16 @@ const registerSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    let body
+    try {
+      body = await request.json()
+    } catch (jsonError) {
+      console.error('Erro ao fazer parse do JSON:', jsonError)
+      return NextResponse.json(
+        { error: 'JSON inválido' },
+        { status: 400 }
+      )
+    }
     const data = registerSchema.parse(body)
 
     // Verifica se login ou email já existe

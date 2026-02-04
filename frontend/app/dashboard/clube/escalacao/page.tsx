@@ -28,6 +28,7 @@ export default function EscalacaoPage() {
   const [reservas, setReservas] = useState<string[]>([])
   const [jogadorSelecionado, setJogadorSelecionado] = useState<string | null>(null)
   const [posicoesJogadores, setPosicoesJogadores] = useState<Record<string, number>>({}) // jogadorId -> índice da posição
+  const [jogadorArrastando, setJogadorArrastando] = useState<string | null>(null)
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -98,6 +99,7 @@ export default function EscalacaoPage() {
     }
     setReservas(reservas.filter(id => id !== jogadorId))
     
+    // Se não especificou posição, não força posicionamento (permite mudança manual)
     if (posicaoIndex !== undefined) {
       setPosicoesJogadores({ ...posicoesJogadores, [jogadorId]: posicaoIndex })
     }
@@ -125,9 +127,44 @@ export default function EscalacaoPage() {
     }
   }
 
+  // Handlers para drag and drop
+  const handleDragStart = (e: React.DragEvent, jogadorId: string) => {
+    setJogadorArrastando(jogadorId)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleDrop = (e: React.DragEvent, posicaoIndex: number) => {
+    e.preventDefault()
+    if (jogadorArrastando) {
+      handlePosicionarJogador(jogadorArrastando, posicaoIndex)
+      setJogadorArrastando(null)
+    }
+  }
+
+  const handleDragEnd = () => {
+    setJogadorArrastando(null)
+  }
+
   const handleMoverParaReserva = (jogadorId: string) => {
-    setReservas([...reservas, jogadorId])
+    // Limita reservas a 12 jogadores
+    if (reservas.length >= 12 && !reservas.includes(jogadorId)) {
+      alert('Você pode ter no máximo 12 reservas!')
+      return
+    }
+    
+    if (!reservas.includes(jogadorId)) {
+      setReservas([...reservas, jogadorId])
+    }
     setTitulares(titulares.filter(id => id !== jogadorId))
+    // Remove a posição quando vai para reserva
+    const novasPosicoes = { ...posicoesJogadores }
+    delete novasPosicoes[jogadorId]
+    setPosicoesJogadores(novasPosicoes)
   }
 
   const handleRemover = (jogadorId: string) => {
@@ -141,13 +178,21 @@ export default function EscalacaoPage() {
   // Função para verificar se um jogador pode jogar em uma posição
   const podeJogarNaPosicao = (jogador: Jogador, posicaoNecessaria: string): boolean => {
     const posicaoJogador = jogador.posicaoCompleta || jogador.posicao
+    const posicaoJogadorLower = posicaoJogador.toLowerCase()
+    const posicaoNecessariaLower = posicaoNecessaria.toLowerCase()
     
-    // Mapeamento de compatibilidade de posições
+    // Posições restritivas - só aceita jogadores da posição exata
+    const posicoesRestritivas = ['goleiro', 'lateral d', 'lateral e', 'zagueiro']
+    
+    if (posicoesRestritivas.includes(posicaoNecessariaLower)) {
+      // Para goleiro, lateral e zagueiro, só aceita se for exatamente essa posição
+      return posicaoJogadorLower === posicaoNecessariaLower ||
+             posicaoJogadorLower.includes(posicaoNecessariaLower) ||
+             posicaoNecessariaLower.includes(posicaoJogadorLower)
+    }
+    
+    // Mapeamento de compatibilidade para outras posições
     const compatibilidade: Record<string, string[]> = {
-      'Goleiro': ['Goleiro'],
-      'Lateral D': ['Lateral D'],
-      'Lateral E': ['Lateral E'],
-      'Zagueiro': ['Zagueiro'],
       'Volante': ['Volante', 'Meia'],
       'Meia': ['Meia', 'Meia Ofensivo', 'Volante'],
       'Meia Ofensivo': ['Meia Ofensivo', 'Meia', 'Atacante'],
@@ -156,24 +201,43 @@ export default function EscalacaoPage() {
     
     const posicoesCompativeis = compatibilidade[posicaoNecessaria] || [posicaoNecessaria]
     return posicoesCompativeis.some(pos => 
-      posicaoJogador.toLowerCase().includes(pos.toLowerCase()) ||
-      pos.toLowerCase().includes(posicaoJogador.toLowerCase())
+      posicaoJogadorLower.includes(pos.toLowerCase()) ||
+      pos.toLowerCase().includes(posicaoJogadorLower)
     )
   }
 
   // Função para calcular a pontuação de um jogador para uma posição
   const calcularPontuacao = (jogador: Jogador, posicaoNecessaria: string): number => {
     const posicaoJogador = jogador.posicaoCompleta || jogador.posicao
+    const posicaoJogadorLower = posicaoJogador.toLowerCase()
+    const posicaoNecessariaLower = posicaoNecessaria.toLowerCase()
+    
+    // Posições restritivas - retorna -Infinity se não for da posição correta
+    const posicoesRestritivas = ['goleiro', 'lateral d', 'lateral e', 'zagueiro']
+    
+    if (posicoesRestritivas.includes(posicaoNecessariaLower)) {
+      // Para goleiro, lateral e zagueiro, só aceita se for exatamente essa posição
+      const podeJogar = posicaoJogadorLower === posicaoNecessariaLower ||
+                       posicaoJogadorLower.includes(posicaoNecessariaLower) ||
+                       posicaoNecessariaLower.includes(posicaoJogadorLower)
+      
+      if (!podeJogar) {
+        return -Infinity // Não pode jogar nesta posição
+      }
+    } else {
+      // Para outras posições, verifica compatibilidade
+      if (!podeJogarNaPosicao(jogador, posicaoNecessaria)) {
+        return -Infinity // Não pode jogar nesta posição
+      }
+    }
+    
     let pontuacao = jogador.overall
     
     // Bônus se a posição é exata
-    if (posicaoJogador.toLowerCase() === posicaoNecessaria.toLowerCase()) {
+    if (posicaoJogadorLower === posicaoNecessariaLower) {
       pontuacao += 20
     } else if (podeJogarNaPosicao(jogador, posicaoNecessaria)) {
       pontuacao += 10
-    } else {
-      // Penalidade se não pode jogar na posição
-      pontuacao -= 30
     }
     
     // Bônus por raridade
@@ -189,7 +253,7 @@ export default function EscalacaoPage() {
     return pontuacao
   }
 
-  // Escalação automática
+  // Escalação automática - posiciona cada jogador na posição correta
   const handleEscalacaoAutomatica = () => {
     if (jogadores.length < 11) {
       alert('Você precisa ter pelo menos 11 jogadores para escalação automática!')
@@ -208,38 +272,54 @@ export default function EscalacaoPage() {
     for (let i = 0; i < Math.min(11, posicoesFormacao.length); i++) {
       const posicaoNecessaria = posicoesFormacao[i].posicao
       
-      // Encontra o melhor jogador para esta posição
+      // Encontra o melhor jogador para esta posição específica
+      // Filtra apenas jogadores que podem jogar nesta posição
+      const jogadoresCompativeis = jogadoresDisponiveis.filter(j => 
+        calcularPontuacao(j, posicaoNecessaria) !== -Infinity
+      )
+      
+      if (jogadoresCompativeis.length === 0) {
+        // Se não há jogadores compatíveis, usa qualquer um (fallback)
+        console.warn(`Nenhum jogador compatível para posição ${posicaoNecessaria}`)
+      }
+      
       let melhorJogador: Jogador | null = null
       let melhorPontuacao = -Infinity
       let melhorIndex = -1
       
-      for (let j = 0; j < jogadoresDisponiveis.length; j++) {
-        const jogador = jogadoresDisponiveis[j]
+      const listaParaBuscar = jogadoresCompativeis.length > 0 ? jogadoresCompativeis : jogadoresDisponiveis
+      
+      for (let j = 0; j < listaParaBuscar.length; j++) {
+        const jogador = listaParaBuscar[j]
         const pontuacao = calcularPontuacao(jogador, posicaoNecessaria)
         
         if (pontuacao > melhorPontuacao) {
           melhorPontuacao = pontuacao
           melhorJogador = jogador
-          melhorIndex = j
+          melhorIndex = jogadoresDisponiveis.indexOf(jogador)
         }
       }
       
       if (melhorJogador) {
         novosTitulares.push(melhorJogador.id)
+        // Posiciona o jogador na posição correta (índice i)
         novasPosicoes[melhorJogador.id] = i
         jogadoresDisponiveis.splice(melhorIndex, 1)
       }
     }
     
-    // Os jogadores restantes vão para reservas
-    const novasReservas = jogadoresDisponiveis.map(j => j.id)
+    // Limita reservas a 12 jogadores (os melhores restantes)
+    const jogadoresRestantes = jogadoresDisponiveis
+      .sort((a, b) => b.overall - a.overall)
+      .slice(0, 12)
+      .map(j => j.id)
     
     // Atualiza o estado
     setTitulares(novosTitulares)
-    setReservas(novasReservas)
+    setReservas(jogadoresRestantes)
     setPosicoesJogadores(novasPosicoes)
     
-    alert(`Escalação automática concluída! ${novosTitulares.length} titulares escalados.`)
+    alert(`Escalação automática concluída! ${novosTitulares.length} titulares escalados nas posições corretas.`)
   }
 
   const handleSalvar = async () => {
@@ -357,21 +437,30 @@ export default function EscalacaoPage() {
           </div>
 
           <div className="mb-4 p-4 bg-yellow-50 rounded-lg">
-            <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
               <div>
                 <p className="text-sm text-gray-700">
-                  💡 Clique em uma posição no campo e depois selecione um jogador para posicioná-lo. Você precisa de pelo menos 11 titulares.
+                  💡 Arraste um jogador para uma posição no campo ou clique na posição e depois no jogador. Você precisa de pelo menos 11 titulares.
                 </p>
                 <p className="text-sm font-semibold mt-2">
-                  Titulares: {titulares.length}/11 | Reservas: {reservas.length}
+                  Titulares: {titulares.length}/11 | Reservas: {reservas.length}/12
                 </p>
               </div>
+            </div>
+            <div className="flex gap-3">
               <button
                 onClick={handleEscalacaoAutomatica}
-                className="bg-purple-600 hover:bg-purple-700 text-white font-semibold px-4 py-2 rounded-lg transition flex items-center gap-2 whitespace-nowrap"
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold px-4 py-2 rounded-lg transition flex items-center justify-center gap-2"
                 title="Escala automaticamente os melhores jogadores para cada posição"
               >
                 ⚡ Escalação Automática
+              </button>
+              <button
+                onClick={handleSalvar}
+                disabled={salvando || titulares.length < 11}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {salvando ? 'Salvando...' : 'Salvar Escalação'}
               </button>
             </div>
           </div>
@@ -467,6 +556,8 @@ export default function EscalacaoPage() {
                 return (
                   <div
                     key={index}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, index)}
                     onClick={() => {
                       if (jogadorSelecionado) {
                         handlePosicionarJogador(jogadorSelecionado, index)
@@ -477,7 +568,9 @@ export default function EscalacaoPage() {
                     }}
                     className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all ${
                       jogadorSelecionado === jogador?.id ? 'ring-4 ring-blue-500' : ''
-                    } ${jogador ? 'hover:scale-110' : 'hover:scale-105'}`}
+                    } ${jogador ? 'hover:scale-110' : 'hover:scale-105'} ${
+                      jogadorArrastando ? 'ring-2 ring-yellow-400' : ''
+                    }`}
                     style={{
                       left: `${pos.x}%`,
                       top: `${pos.y}%`
@@ -521,17 +614,20 @@ export default function EscalacaoPage() {
             {/* Lista de Titulares */}
             <div>
               <h2 className="text-2xl font-bold text-gray-800 mb-4">Titulares ({titulares.length}/11)</h2>
-              <div className="space-y-2 max-h-96 overflow-y-auto border-2 border-green-300 rounded-lg p-4 bg-green-50">
+              <div className="space-y-2 h-[400px] overflow-y-auto border-2 border-green-300 rounded-lg p-4 bg-green-50">
                 {titulares.map((jogadorId) => {
                   const jogador = jogadores.find(j => j.id === jogadorId)
                   if (!jogador) return null
                   const posicaoIndex = posicoesJogadores[jogadorId]
                   return (
                     <div 
-                      key={jogadorId} 
-                      className={`bg-white rounded-lg p-3 shadow flex items-center justify-between cursor-pointer transition ${
+                      key={jogadorId}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, jogadorId)}
+                      onDragEnd={handleDragEnd}
+                      className={`bg-white rounded-lg p-3 shadow flex items-center justify-between cursor-move transition ${
                         jogadorSelecionado === jogadorId ? 'ring-2 ring-blue-500' : ''
-                      }`}
+                      } hover:shadow-lg`}
                       onClick={() => setJogadorSelecionado(jogadorSelecionado === jogadorId ? null : jogadorId)}
                     >
                       <div className="flex items-center gap-3">
@@ -577,13 +673,19 @@ export default function EscalacaoPage() {
 
             {/* Reservas */}
             <div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Reservas ({reservas.length})</h2>
-              <div className="space-y-2 min-h-[200px] border-2 border-yellow-300 rounded-lg p-4 bg-yellow-50">
-                {reservas.map((jogadorId) => {
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Reservas ({reservas.length}/12)</h2>
+              <div className="space-y-2 h-[400px] overflow-y-auto border-2 border-yellow-300 rounded-lg p-4 bg-yellow-50">
+                {reservas.slice(0, 12).map((jogadorId) => {
                   const jogador = jogadores.find(j => j.id === jogadorId)
                   if (!jogador) return null
                   return (
-                    <div key={jogadorId} className="bg-white rounded-lg p-3 shadow flex items-center justify-between">
+                    <div 
+                      key={jogadorId} 
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, jogadorId)}
+                      onDragEnd={handleDragEnd}
+                      className="bg-white rounded-lg p-3 shadow flex items-center justify-between cursor-move hover:shadow-lg transition"
+                    >
                       <div className="flex items-center gap-3">
                         <div
                           className="w-10 h-10 rounded-full flex items-center justify-center text-xl"
@@ -623,7 +725,13 @@ export default function EscalacaoPage() {
             <h2 className="text-2xl font-bold text-gray-800 mb-4">Jogadores Disponíveis</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-96 overflow-y-auto">
               {jogadoresDisponiveis.map((jogador) => (
-                <div key={jogador.id} className="bg-gray-50 rounded-lg p-3 shadow flex items-center justify-between">
+                <div 
+                  key={jogador.id} 
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, jogador.id)}
+                  onDragEnd={handleDragEnd}
+                  className="bg-gray-50 rounded-lg p-3 shadow flex items-center justify-between cursor-move hover:shadow-lg transition"
+                >
                   <div className="flex items-center gap-3">
                     <div
                       className="w-10 h-10 rounded-full flex items-center justify-center text-xl"
@@ -647,14 +755,6 @@ export default function EscalacaoPage() {
               ))}
             </div>
           </div>
-
-          <button
-            onClick={handleSalvar}
-            disabled={salvando || titulares.length < 11}
-            className="mt-6 w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition disabled:opacity-50"
-          >
-            {salvando ? 'Salvando...' : 'Salvar Escalação'}
-          </button>
         </div>
       </div>
     </div>

@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: brasfoot-frontend
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://brasfoot_user:brasfoot_pass@postgres:5432/brasfoot?schema=public
+      - NEXT_PUBLIC_APP_URL=https://relatorio.fun
+    ports:
+      - "3002:3000"
+    networks:
+      - postgres-network
+    restart: unless-stopped
+
+networks:
+  postgres-network:
+    name: funipro_funipro-network
+    external: true
