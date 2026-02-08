@@ -3,6 +3,7 @@ import { verifyToken } from '@backend/lib/auth'
 import { prisma } from '@backend/lib/prisma'
 import { simularPartidaDetalhada } from '@backend/lib/partidas-detalhadas'
 import { registrarPartidaEmAndamento } from '@backend/lib/matchmaking'
+import { armazenarPartidaDesafio } from '@backend/lib/jogadores-online'
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,8 +47,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Oponente não tem clube criado' }, { status: 400 })
     }
 
+    const desafiante = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { nome: true, sobrenome: true }
+    })
+    const desafianteNome = desafiante ? `${desafiante.nome} ${desafiante.sobrenome}` : 'Oponente'
+
     // Simula a partida
     const resultado = await simularPartidaDetalhada(decoded.userId, oponenteId, tipo)
+    
+    // Armazena partida para o desafiado receber no próximo poll (para ambos jogarem)
+    armazenarPartidaDesafio(oponenteId, resultado, desafianteNome, tipo)
     
     // Registra partida em andamento para controle de pausa (apenas se for ranqueada)
     if (resultado.partida?.id && tipo === 'ranqueado') {

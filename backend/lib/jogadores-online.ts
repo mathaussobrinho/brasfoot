@@ -28,6 +28,24 @@ const jogadoresOnline: Map<string, JogadorOnline> = new Map()
 // Mensagens do chat (últimas 100)
 const mensagensChat: MensagemChat[] = []
 
+// Partidas de desafio aguardando o desafiado aceitar/receber (userId do desafiado -> dados da partida)
+const partidasDesafioParaJogador: Map<string, { partida: any; desafianteNome: string; tipo: string }> = new Map()
+
+// Armazena partida de desafio para o jogador desafiado
+export function armazenarPartidaDesafio(desafiadoId: string, partida: any, desafianteNome: string, tipo: string): void {
+  partidasDesafioParaJogador.set(desafiadoId, { partida, desafianteNome, tipo })
+}
+
+// Obtém e remove partida de desafio para o jogador (consome - só retorna uma vez)
+export function obterPartidaDesafio(userId: string): { partida: any; desafianteNome: string; tipo: string } | null {
+  const dados = partidasDesafioParaJogador.get(userId)
+  if (dados) {
+    partidasDesafioParaJogador.delete(userId)
+    return dados
+  }
+  return null
+}
+
 // Adiciona jogador online
 export function adicionarJogadorOnline(jogador: JogadorOnline): void {
   jogadoresOnline.set(jogador.userId, {
