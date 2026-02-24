@@ -1,14 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useAuthStore } from '@/lib/authStore'
 
 export default function LoginPage() {
   const router = useRouter()
   const [formData, setFormData] = useState({ login: '', senha: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    if (token) {
+      document.cookie = `token=${token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`
+      router.replace('/dashboard')
+    }
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -32,6 +41,8 @@ export default function LoginPage() {
       localStorage.setItem('token', data.token)
       localStorage.setItem('user', JSON.stringify(data.user))
       localStorage.setItem('userId', data.user.id)
+      document.cookie = `token=${data.token}; path=/; max-age=${30 * 24 * 60 * 60}; SameSite=Lax`
+      useAuthStore.getState().setAuth(data.token, { id: data.user.id, nome: data.user.nome, sobrenome: data.user.sobrenome, login: data.user.login, email: data.user.email })
       
       // Marca como online
       try {

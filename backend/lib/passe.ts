@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/prisma'
+import { prisma } from './prisma'
 import { addDays, isAfter, isBefore } from 'date-fns'
 
 // Cria ou renova um passe de temporada (30 dias)

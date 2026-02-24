@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit } from '@/lib/rateLimit'
 import { prisma } from '@backend/lib/prisma'
 import { verifyPassword, generateToken } from '@backend/lib/auth'
 import { z } from 'zod'
@@ -10,6 +11,14 @@ const loginSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    const rate = checkRateLimit(request)
+    if (!rate.ok) {
+      return NextResponse.json(
+        { error: 'Muitas tentativas. Tente novamente em alguns minutos.' },
+        { status: 429 }
+      )
+    }
+
     const body = await request.json()
     const data = loginSchema.parse(body)
 

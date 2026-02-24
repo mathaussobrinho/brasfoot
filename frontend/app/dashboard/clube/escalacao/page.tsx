@@ -22,6 +22,7 @@ export default function EscalacaoPage() {
   const router = useRouter()
   const [jogadores, setJogadores] = useState<Jogador[]>([])
   const [clube, setClube] = useState<any>(null)
+  const [poder, setPoder] = useState<{ forcaTotal: number; forcaGoleiro: number; forcaDefesa: number; forcaMeio: number; forcaAtaque: number; detalhes?: any } | null>(null)
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [titulares, setTitulares] = useState<string[]>([])
@@ -66,6 +67,7 @@ export default function EscalacaoPage() {
       
       if (clubeData.clube) {
         setClube(clubeData.clube)
+        setPoder(clubeData.poder || null)
         const escalados = clubeData.clube.escalacao || []
         const tit = escalados.filter((e: any) => e.isTitular).map((e: any) => e.jogadorId)
         const res = escalados.filter((e: any) => !e.isTitular).map((e: any) => e.jogadorId)
@@ -371,6 +373,7 @@ export default function EscalacaoPage() {
       }
 
       alert('Escalação salva com sucesso!')
+      fetchData(token)
     } catch (error) {
       alert('Erro ao conectar com o servidor')
     } finally {
@@ -464,6 +467,24 @@ export default function EscalacaoPage() {
               </button>
             </div>
           </div>
+
+          {poder && (
+            <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <h3 className="text-lg font-bold text-gray-800 mb-2">Poder do time</h3>
+              <p className="text-sm text-gray-600 mb-2">
+                Baseado nos 11 titulares e na compatibilidade das posições (jogador no lugar certo rende mais).
+              </p>
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="text-3xl font-bold text-blue-700">{poder.forcaTotal}</div>
+                <div className="flex gap-3 text-sm">
+                  <span title="Goleiro">GK: {poder.forcaGoleiro}</span>
+                  <span title="Defesa">DEF: {poder.forcaDefesa}</span>
+                  <span title="Meio">MEIO: {poder.forcaMeio}</span>
+                  <span title="Ataque">ATA: {poder.forcaAtaque}</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Campo de Futebol */}
           <div className="mb-6">

@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@backend/lib/auth'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { continuarSegundoTempo } from '@backend/lib/matchmaking'
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const body = await request.json()
     const { partidaId } = body
@@ -22,7 +14,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'PartidaId é obrigatório' }, { status: 400 })
     }
 
-    const resultado = continuarSegundoTempo(partidaId, decoded.userId)
+    const resultado = continuarSegundoTempo(partidaId, auth.userId)
 
     return NextResponse.json(resultado)
   } catch (error: any) {

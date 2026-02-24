@@ -1,20 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { prisma } from '@backend/lib/prisma'
-import { verifyToken } from '@backend/lib/auth'
 import { finalizarLeiloesExpirados } from '@backend/lib/leilao'
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     // Finaliza leilões expirados primeiro
     await finalizarLeiloesExpirados()

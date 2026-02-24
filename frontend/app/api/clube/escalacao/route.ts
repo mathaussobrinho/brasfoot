@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@backend/lib/auth'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { prisma } from '@backend/lib/prisma'
 import { salvarEscalacao } from '@backend/lib/clube'
 import { z } from 'zod'
@@ -12,23 +12,15 @@ const escalacaoSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const body = await request.json()
     const data = escalacaoSchema.parse(body)
 
     // Verifica se o clube existe
     const clube = await prisma.clube.findUnique({
-      where: { userId: decoded.userId }
+      where: { userId: auth.userId }
     })
 
     if (!clube) {
@@ -39,7 +31,7 @@ export async function POST(request: NextRequest) {
     const jogadores = await prisma.jogador.findMany({
       where: {
         id: { in: data.jogadoresIds },
-        userId: decoded.userId
+        userId: auth.userId
       }
     })
 

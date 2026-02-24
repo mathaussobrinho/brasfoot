@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@backend/lib/auth'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { prisma } from '@backend/lib/prisma'
 import {
   adicionarJogadorOnline,
@@ -12,16 +12,8 @@ import {
 // GET - Obtém jogadores online e mensagens do chat
 export async function GET(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const jogadores = obterJogadoresOnline()
     const mensagens = obterMensagensChat()
@@ -38,16 +30,8 @@ export async function GET(request: NextRequest) {
 // POST - Atualiza status online ou envia mensagem
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const body = await request.json()
     const { acao, mensagem } = body
@@ -55,7 +39,7 @@ export async function POST(request: NextRequest) {
     if (acao === 'atualizar-online') {
       // Atualiza status online do jogador
       const user = await prisma.user.findUnique({
-        where: { id: decoded.userId },
+        where: { id: auth.userId },
         include: { clube: true }
       })
 
@@ -85,7 +69,7 @@ export async function POST(request: NextRequest) {
       }
 
       const user = await prisma.user.findUnique({
-        where: { id: decoded.userId },
+        where: { id: auth.userId },
         select: { nome: true, sobrenome: true, login: true }
       })
 
@@ -94,7 +78,7 @@ export async function POST(request: NextRequest) {
       }
 
       const novaMensagem = adicionarMensagemChat(
-        decoded.userId,
+        auth.userId,
         `${user.nome} ${user.sobrenome}`,
         user.login,
         mensagem.trim()
@@ -115,18 +99,10 @@ export async function POST(request: NextRequest) {
 // DELETE - Remove jogador online
 export async function DELETE(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
-
-    removerJogadorOnline(decoded.userId)
+    removerJogadorOnline(auth.userId)
 
     return NextResponse.json({ sucesso: true })
   } catch (error: any) {

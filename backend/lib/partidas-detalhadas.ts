@@ -1,7 +1,7 @@
-import { prisma } from '@/lib/prisma'
-import { obterJogadoresEscalados } from '@/lib/clube'
-import { atualizarOverallTecnico } from '@/lib/tecnico'
-import { calcularForcaTime, calcularProbabilidadeGol, calcularProbabilidadeDefesa } from '@/lib/forca-time'
+import { prisma } from '@backend/lib/prisma'
+import { obterJogadoresEscalados, obterTitularesComPosicaoSlot } from '@backend/lib/clube'
+import { atualizarOverallTecnico } from '@backend/lib/tecnico'
+import { calcularForcaTime, calcularForcaTimeComCompatibilidade, calcularProbabilidadeGol, calcularProbabilidadeDefesa } from '@backend/lib/forca-time'
 
 interface EventoPartida {
   minuto: number
@@ -41,13 +41,18 @@ export async function simularPartidaDetalhada(
     throw new Error('Você precisa escalar pelo menos 11 jogadores!')
   }
 
-  // Calcula força do time 1 usando o novo sistema
-  const forcaTime1Obj = calcularForcaTime(titulares1.map(j => ({
-    nome: j.nome,
-    posicao: j.posicao,
-    posicaoCompleta: j.posicaoCompleta,
-    overall: j.overall
-  })))
+  // Força do time 1 com compatibilidade de posição (jogador no lugar certo = mais força)
+  const titulares1ComSlot = await obterTitularesComPosicaoSlot(clube1.id)
+  const forcaTime1Obj = titulares1ComSlot.length >= 11
+    ? calcularForcaTimeComCompatibilidade(titulares1ComSlot.map(t => ({
+        nome: t.jogador.nome,
+        posicao: t.jogador.posicao,
+        posicaoCompleta: t.jogador.posicaoCompleta,
+        overall: t.jogador.overall,
+        slotIndex: t.slotIndex,
+        posicaoEsperada: t.posicaoEsperada
+      })))
+    : calcularForcaTime(titulares1.map(j => ({ nome: j.nome, posicao: j.posicao, posicaoCompleta: j.posicaoCompleta, overall: j.overall })))
   const user1 = await prisma.user.findUnique({
     where: { id: userId1 },
     select: { tecnicoOverall: true }
@@ -101,13 +106,17 @@ export async function simularPartidaDetalhada(
       throw new Error('Oponente não tem 11 jogadores escalados')
     }
 
-    // Calcula força do time 2 usando o novo sistema
-    const forcaTime2Obj = calcularForcaTime(titulares2.map((j: any) => ({
-      nome: j.nome,
-      posicao: j.posicao,
-      posicaoCompleta: j.posicaoCompleta,
-      overall: j.overall
-    })))
+    const titulares2ComSlot = await obterTitularesComPosicaoSlot(clube2.id)
+    const forcaTime2Obj = titulares2ComSlot.length >= 11
+      ? calcularForcaTimeComCompatibilidade(titulares2ComSlot.map(t => ({
+          nome: t.jogador.nome,
+          posicao: t.jogador.posicao,
+          posicaoCompleta: t.jogador.posicaoCompleta,
+          overall: t.jogador.overall,
+          slotIndex: t.slotIndex,
+          posicaoEsperada: t.posicaoEsperada
+        })))
+      : calcularForcaTime(titulares2.map((j: any) => ({ nome: j.nome, posicao: j.posicao, posicaoCompleta: j.posicaoCompleta, overall: j.overall })))
     const user2 = await prisma.user.findUnique({
       where: { id: userId2 },
       select: { tecnicoOverall: true }

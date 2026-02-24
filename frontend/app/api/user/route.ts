@@ -1,30 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { prisma } from '@backend/lib/prisma'
-import { verifyToken } from '@backend/lib/auth'
 import { getTirosDisponiveis } from '@backend/lib/tiros'
 import { verificarPasseAtivo } from '@backend/lib/passe'
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json(
-        { error: 'Token não fornecido' },
-        { status: 401 }
-      )
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json(
-        { error: 'Token inválido' },
-        { status: 401 }
-      )
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: auth.userId },
       select: {
         id: true,
         nome: true,
@@ -43,8 +29,8 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const tirosDisponiveis = await getTirosDisponiveis(decoded.userId)
-    const temPasseAtivo = await verificarPasseAtivo(decoded.userId)
+    const tirosDisponiveis = await getTirosDisponiveis(auth.userId)
+    const temPasseAtivo = await verificarPasseAtivo(auth.userId)
 
     return NextResponse.json({
       user,

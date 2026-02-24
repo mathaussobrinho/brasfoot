@@ -1,4 +1,5 @@
-import { prisma } from '@/lib/prisma'
+import { prisma } from './prisma'
+import { obterPosicoesFormacao } from './formacoes'
 
 // Escudos disponíveis (IDs dos escudos)
 export const ESCUDOS_DISPONIVEIS = [
@@ -165,8 +166,28 @@ export async function obterJogadoresEscalados(clubeId: string) {
     jogador: jogadores.find(j => j.id === e.jogadorId)
   })).filter(e => e.jogador) // Remove se não encontrar o jogador
 
+  const titulares = escalacaoComJogadores.filter(e => e.isTitular).map(e => e.jogador!)
+  const reservas = escalacaoComJogadores.filter(e => !e.isTitular).map(e => e.jogador!)
+
   return {
-    titulares: escalacaoComJogadores.filter(e => e.isTitular).map(e => e.jogador!),
-    reservas: escalacaoComJogadores.filter(e => !e.isTitular).map(e => e.jogador!)
+    titulares,
+    reservas
   }
+}
+
+/** Retorna os titulares com slot (posição no campo) e posição esperada da formação, para cálculo de força com compatibilidade */
+export async function obterTitularesComPosicaoSlot(clubeId: string) {
+  const clube = await prisma.clube.findUnique({
+    where: { id: clubeId },
+    select: { formacao: true }
+  })
+  const formacao = clube?.formacao || '4-4-2'
+  const posicoesCampo = obterPosicoesFormacao(formacao)
+
+  const { titulares } = await obterJogadoresEscalados(clubeId)
+  return titulares.slice(0, 11).map((jogador, index) => ({
+    jogador,
+    slotIndex: index,
+    posicaoEsperada: posicoesCampo[index]?.posicao || 'Meia'
+  }))
 }

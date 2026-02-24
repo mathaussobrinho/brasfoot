@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@backend/lib/auth'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { criarOuAtualizarClube } from '@backend/lib/clube'
 import { z } from 'zod'
 
@@ -12,22 +12,14 @@ const criarClubeSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const body = await request.json()
     const data = criarClubeSchema.parse(body)
 
     const clube = await criarOuAtualizarClube(
-      decoded.userId,
+      auth.userId,
       data.nome,
       data.sigla,
       data.escudo,
@@ -42,9 +34,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Dados inválidos', details: error.errors }, { status: 400 })
     }
 
-    return NextResponse.json({ 
-      error: error.message || 'Erro ao criar clube',
-      details: error.stack 
-    }, { status: 500 })
+    return NextResponse.json(
+      { error: error.message || 'Erro ao criar clube' },
+      { status: 500 }
+    )
   }
 }

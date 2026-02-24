@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@backend/lib/auth'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { criarLeilao } from '@backend/lib/leilao'
 import { z } from 'zod'
 
@@ -10,21 +10,13 @@ const criarLeilaoSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const body = await request.json()
     const data = criarLeilaoSchema.parse(body)
 
-    const leilao = await criarLeilao(data.jogadorId, decoded.userId, data.lanceInicial)
+    const leilao = await criarLeilao(data.jogadorId, auth.userId, data.lanceInicial)
 
     return NextResponse.json({ leilao })
   } catch (error: any) {

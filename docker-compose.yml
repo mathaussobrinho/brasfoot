@@ -9,6 +9,7 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://brasfoot_user:brasfoot_pass@postgres:5432/brasfoot?schema=public
+      - JWT_SECRET=${JWT_SECRET}
       - NEXT_PUBLIC_APP_URL=https://relatorio.fun
     ports:
       - "3002:3000"

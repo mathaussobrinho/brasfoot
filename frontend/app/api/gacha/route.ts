@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { prisma } from '@backend/lib/prisma'
-import { verifyToken } from '@backend/lib/auth'
 import { realizarGacha, gerarJogador } from '@backend/lib/gacha'
 import { usarTiro, getTirosDisponiveis } from '@backend/lib/tiros'
 import { z } from 'zod'
@@ -11,28 +11,14 @@ const gachaSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json(
-        { error: 'Token não fornecido' },
-        { status: 401 }
-      )
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json(
-        { error: 'Token inválido' },
-        { status: 401 }
-      )
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const body = await request.json().catch(() => ({}))
     const { quantidade } = gachaSchema.parse(body)
 
     // Verifica se tem tiros disponíveis
-    const tirosDisponiveis = await getTirosDisponiveis(decoded.userId)
+    const tirosDisponiveis = await getTirosDisponiveis(auth.userId)
     if (tirosDisponiveis < quantidade) {
       return NextResponse.json(
         { error: `Você precisa de ${quantidade} tiros, mas só tem ${tirosDisponiveis} disponíveis` },
@@ -41,7 +27,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Usa os tiros
-    const tirosUsados = await usarTiro(decoded.userId, quantidade)
+    const tirosUsados = await usarTiro(auth.userId, quantidade)
     if (!tirosUsados) {
       return NextResponse.json(
         { error: 'Erro ao usar tiros' },
@@ -70,7 +56,7 @@ export async function POST(request: NextRequest) {
           raridade: jogador.raridade,
           overall: jogador.overall,
           imagem: jogador.imagem,
-          userId: decoded.userId
+          userId: auth.userId
         }
       })
 
@@ -79,7 +65,7 @@ export async function POST(request: NextRequest) {
       // Salva no log do gacha
       const log = await prisma.gachaLog.create({
         data: {
-          userId: decoded.userId,
+          userId: auth.userId,
           jogadorId: jogadorCriado.id,
           raridade
         }
@@ -89,7 +75,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Retorna os novos tiros disponíveis
-    const novosTiros = await getTirosDisponiveis(decoded.userId)
+    const novosTiros = await getTirosDisponiveis(auth.userId)
 
     return NextResponse.json({
       jogadores: jogadoresCriados,
@@ -115,24 +101,10 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json(
-        { error: 'Token não fornecido' },
-        { status: 401 }
-      )
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json(
-        { error: 'Token inválido' },
-        { status: 401 }
-      )
-    }
-
-    const tirosDisponiveis = await getTirosDisponiveis(decoded.userId)
+    const tirosDisponiveis = await getTirosDisponiveis(auth.userId)
 
     return NextResponse.json({ tirosDisponiveis })
   } catch (error) {

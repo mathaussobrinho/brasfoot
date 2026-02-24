@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { prisma } from '@backend/lib/prisma'
-import { verifyToken } from '@backend/lib/auth'
 import { calcularPrecoVendaDireta, atualizarPrecoVendaDireta } from '@backend/lib/vendas'
 import { z } from 'zod'
 
@@ -10,16 +10,8 @@ const vendaDiretaSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const body = await request.json()
     const data = vendaDiretaSchema.parse(body)
@@ -32,7 +24,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Jogador não encontrado' }, { status: 404 })
     }
 
-    if (jogador.userId !== decoded.userId) {
+    if (jogador.userId !== auth.userId) {
       return NextResponse.json({ error: 'Você não é o dono deste jogador' }, { status: 403 })
     }
 
@@ -56,16 +48,8 @@ export async function POST(request: NextRequest) {
 // GET para obter preço de venda direta
 export async function GET(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const { searchParams } = new URL(request.url)
     const jogadorId = searchParams.get('jogadorId')

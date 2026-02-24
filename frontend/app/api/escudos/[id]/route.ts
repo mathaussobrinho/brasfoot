@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { gerarEscudoSVG, obterEscudoConfig } from '@/lib/escudos'
+import { gerarEscudoSVG, obterEscudoConfig } from '@backend/lib/escudos'
 
 export async function GET(
   request: NextRequest,

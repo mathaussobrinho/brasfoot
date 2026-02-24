@@ -1,23 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@backend/lib/auth'
-import { obterClube } from '@backend/lib/clube'
+import { getAuthUser } from '@/lib/getAuthUser'
+import { obterClube, obterTitularesComPosicaoSlot } from '@backend/lib/clube'
+import { calcularForcaTimeComCompatibilidade } from '@backend/lib/forca-time'
 
 export async function GET(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
+
+    const clube = await obterClube(auth.userId)
+    let poder = null
+
+    if (clube?.id) {
+      try {
+        const titularesComSlot = await obterTitularesComPosicaoSlot(clube.id)
+        if (titularesComSlot.length >= 11) {
+          poder = calcularForcaTimeComCompatibilidade(titularesComSlot.map(t => ({
+            nome: t.jogador.nome,
+            posicao: t.jogador.posicao,
+            posicaoCompleta: t.jogador.posicaoCompleta,
+            overall: t.jogador.overall,
+            slotIndex: t.slotIndex,
+            posicaoEsperada: t.posicaoEsperada
+          })))
+        }
+      } catch {
+        // Ignora erro de poder (ex.: escalação incompleta)
+      }
     }
 
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
-
-    const clube = await obterClube(decoded.userId)
-
-    return NextResponse.json({ clube })
+    return NextResponse.json({ clube, poder })
   } catch (error) {
     console.error('Erro ao obter clube:', error)
     return NextResponse.json({ error: 'Erro ao obter clube' }, { status: 500 })

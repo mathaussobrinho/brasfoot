@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@backend/lib/auth'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { prisma } from '@backend/lib/prisma'
 import {
   entrarNaFila,
@@ -20,23 +20,15 @@ import { registrarPartidaEmAndamento } from '@backend/lib/matchmaking'
 // GET - Verifica status da busca
 export async function GET(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const { searchParams } = new URL(request.url)
     const partidaId = searchParams.get('partidaId')
 
     // Se tem partidaId, verifica status da partida (para pausa)
     if (partidaId) {
-      const status = obterStatusPartida(partidaId, decoded.userId)
+      const status = obterStatusPartida(partidaId, auth.userId)
       if (!status) {
         return NextResponse.json({ error: 'Partida não encontrada' }, { status: 404 })
       }
@@ -44,7 +36,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Primeiro verifica se já tem uma partida encontrada aguardando
-    const partidaEncontrada = obterPartidaEncontrada(decoded.userId)
+    const partidaEncontrada = obterPartidaEncontrada(auth.userId)
     if (partidaEncontrada) {
       // Não remove imediatamente - deixa disponível por um tempo
       // A partida será removida automaticamente após timeout ou quando ambos já tiverem buscado
@@ -57,7 +49,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Verifica se encontrou oponente
-    const oponente = encontrarOponente(decoded.userId)
+    const oponente = encontrarOponente(auth.userId)
     
     if (oponente) {
       // Encontrou oponente! Cria a partida
@@ -67,7 +59,7 @@ export async function GET(request: NextRequest) {
       })
 
       if (!oponenteData || !oponenteData.clube) {
-        sairDaFila(decoded.userId)
+        sairDaFila(auth.userId)
         return NextResponse.json({ 
           buscando: true,
           encontrou: false 
@@ -75,13 +67,13 @@ export async function GET(request: NextRequest) {
       }
 
       // Simula a partida
-      const resultado = await simularPartidaDetalhada(decoded.userId, oponente.userId, 'ranqueado')
+      const resultado = await simularPartidaDetalhada(auth.userId, oponente.userId, 'ranqueado')
       
       // Registra partida em andamento para controle de pausa
       if (resultado.partida?.id) {
         registrarPartidaEmAndamento(
           resultado.partida.id,
-          decoded.userId,
+          auth.userId,
           oponente.userId
         )
         
@@ -89,7 +81,7 @@ export async function GET(request: NextRequest) {
         // para que o outro jogador possa buscá-la no próximo polling
         armazenarPartidaEncontrada(
           resultado.partida.id,
-          decoded.userId,
+          auth.userId,
           oponente.userId,
           resultado
         )
@@ -114,19 +106,11 @@ export async function GET(request: NextRequest) {
 // POST - Entrar na fila
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: auth.userId },
       select: { tecnicoOverall: true, clube: true }
     })
 
@@ -139,7 +123,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verifica se já está na fila
-    if (estaNaFila(decoded.userId)) {
+    if (estaNaFila(auth.userId)) {
       return NextResponse.json({ 
         sucesso: true,
         mensagem: 'Já está na fila',
@@ -147,7 +131,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    entrarNaFila(decoded.userId, user.tecnicoOverall || 50)
+    entrarNaFila(auth.userId, user.tecnicoOverall || 50)
 
     return NextResponse.json({
       sucesso: true,
@@ -162,18 +146,10 @@ export async function POST(request: NextRequest) {
 // DELETE - Sair da fila
 export async function DELETE(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
-
-    sairDaFila(decoded.userId)
+    sairDaFila(auth.userId)
 
     return NextResponse.json({
       sucesso: true,
@@ -187,16 +163,8 @@ export async function DELETE(request: NextRequest) {
 // PUT - Pausar/Despausar partida
 export async function PUT(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const body = await request.json()
     const { partidaId, acao } = body // acao: 'pausar' ou 'despausar'
@@ -206,10 +174,10 @@ export async function PUT(request: NextRequest) {
     }
 
     if (acao === 'pausar') {
-      const resultado = pausarPartida(partidaId, decoded.userId)
+      const resultado = pausarPartida(partidaId, auth.userId)
       return NextResponse.json(resultado)
     } else if (acao === 'despausar') {
-      const resultado = despausarPartida(partidaId, decoded.userId)
+      const resultado = despausarPartida(partidaId, auth.userId)
       return NextResponse.json(resultado)
     } else {
       return NextResponse.json({ error: 'Ação inválida' }, { status: 400 })

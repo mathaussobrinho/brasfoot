@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { prisma } from '@backend/lib/prisma'
-import { verifyToken } from '@backend/lib/auth'
 import { adicionarTirosComprados } from '@backend/lib/tiros'
 import { criarPasseTemporada } from '@backend/lib/passe'
 import { z } from 'zod'
@@ -16,22 +16,8 @@ const PRECO_PASSE = 29.90 // R$ 29,90 pelo passe
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json(
-        { error: 'Token não fornecido' },
-        { status: 401 }
-      )
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json(
-        { error: 'Token inválido' },
-        { status: 401 }
-      )
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const body = await request.json()
     const data = compraSchema.parse(body)
@@ -51,7 +37,7 @@ export async function POST(request: NextRequest) {
       try {
         // Verifica se o usuário existe
         const user = await prisma.user.findUnique({
-          where: { id: decoded.userId }
+          where: { id: auth.userId }
         })
 
         if (!user) {
@@ -62,12 +48,12 @@ export async function POST(request: NextRequest) {
         }
 
         // Adiciona os tiros comprados
-        await adicionarTirosComprados(decoded.userId, data.quantidade)
+        await adicionarTirosComprados(auth.userId, data.quantidade)
 
         // Registra a compra
         compra = await prisma.compra.create({
           data: {
-            userId: decoded.userId,
+            userId: auth.userId,
             tipo: 'tiros',
             quantidade: data.quantidade,
             valor
@@ -84,7 +70,7 @@ export async function POST(request: NextRequest) {
       try {
         // Verifica se o usuário existe
         const user = await prisma.user.findUnique({
-          where: { id: decoded.userId }
+          where: { id: auth.userId }
         })
 
         if (!user) {
@@ -95,12 +81,12 @@ export async function POST(request: NextRequest) {
         }
 
         // Cria ou renova o passe
-        await criarPasseTemporada(decoded.userId)
+        await criarPasseTemporada(auth.userId)
 
         // Registra a compra
         compra = await prisma.compra.create({
           data: {
-            userId: decoded.userId,
+            userId: auth.userId,
             tipo: 'passe',
             valor: PRECO_PASSE
           }

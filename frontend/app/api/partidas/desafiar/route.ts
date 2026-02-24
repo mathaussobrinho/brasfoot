@@ -1,21 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@backend/lib/auth'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { prisma } from '@backend/lib/prisma'
 import { simularPartidaDetalhada } from '@backend/lib/partidas-detalhadas'
 import { registrarPartidaEmAndamento } from '@backend/lib/matchmaking'
+import { obterJogadoresEscalados } from '@backend/lib/clube'
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     const body = await request.json()
     const { oponenteId, tipo } = body
@@ -24,7 +17,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'OponenteId e tipo são obrigatórios' }, { status: 400 })
     }
 
-    if (oponenteId === decoded.userId) {
+    if (oponenteId === auth.userId) {
       return NextResponse.json({ error: 'Você não pode desafiar a si mesmo' }, { status: 400 })
     }
 
@@ -46,14 +39,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Oponente não tem clube criado' }, { status: 400 })
     }
 
+    // Verifica se o oponente tem 11 jogadores escalados
+    const escalacaoOponente = await obterJogadoresEscalados(oponente.clube.id)
+    if (escalacaoOponente.titulares.length < 11) {
+      return NextResponse.json(
+        { error: 'Oponente não tem time completo (precisa de 11 jogadores escalados)' },
+        { status: 400 }
+      )
+    }
+
     // Simula a partida
-    const resultado = await simularPartidaDetalhada(decoded.userId, oponenteId, tipo)
+    const resultado = await simularPartidaDetalhada(auth.userId, oponenteId, tipo)
     
     // Registra partida em andamento para controle de pausa (apenas se for ranqueada)
     if (resultado.partida?.id && tipo === 'ranqueado') {
       registrarPartidaEmAndamento(
         resultado.partida.id,
-        decoded.userId,
+        auth.userId,
         oponenteId
       )
     }

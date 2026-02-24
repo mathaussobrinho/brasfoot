@@ -1,24 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@backend/lib/auth'
+import { getAuthUser } from '@/lib/getAuthUser'
 import { prisma } from '@backend/lib/prisma'
 import { simularPartidaDetalhada } from '@backend/lib/partidas-detalhadas'
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '')
-    
-    if (!token) {
-      return NextResponse.json({ error: 'Token não fornecido' }, { status: 401 })
-    }
-
-    const decoded = verifyToken(token)
-    if (!decoded) {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
-    }
+    const auth = getAuthUser(request)
+    if (auth instanceof NextResponse) return auth
 
     // Busca oponente
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: auth.userId },
       select: { tecnicoOverall: true }
     })
 
@@ -28,7 +20,7 @@ export async function POST(request: NextRequest) {
 
     const oponente = await prisma.user.findFirst({
       where: {
-        id: { not: decoded.userId },
+        id: { not: auth.userId },
         tecnicoOverall: {
           gte: user.tecnicoOverall - 5,
           lte: user.tecnicoOverall + 5
@@ -41,7 +33,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Nenhum oponente encontrado no momento' }, { status: 404 })
     }
 
-    const resultado = await simularPartidaDetalhada(decoded.userId, oponente.id, 'ranqueado')
+    const resultado = await simularPartidaDetalhada(auth.userId, oponente.id, 'ranqueado')
 
     return NextResponse.json({
       ...resultado,
