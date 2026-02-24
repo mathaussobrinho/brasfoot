@@ -6,7 +6,8 @@ import {
   removerJogadorOnline,
   obterJogadoresOnline,
   adicionarMensagemChat,
-  obterMensagensChat
+  obterMensagensChat,
+  obterPartidaDesafio
 } from '@backend/lib/jogadores-online'
 
 // GET - Obtém jogadores online e mensagens do chat
@@ -17,10 +18,12 @@ export async function GET(request: NextRequest) {
 
     const jogadores = obterJogadoresOnline()
     const mensagens = obterMensagensChat()
+    const partidaDesafio = obterPartidaDesafio(decoded.userId)
 
     return NextResponse.json({
       jogadores,
-      mensagens
+      mensagens,
+      ...(partidaDesafio && { partidaDesafio })
     })
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Erro ao obter jogadores online' }, { status: 400 })

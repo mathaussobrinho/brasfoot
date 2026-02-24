@@ -63,11 +63,11 @@ export function encontrarOponente(userId: string): JogadorNaFila | null {
   const jogador = filaMatchmaking.get(userId)
   if (!jogador) return null
 
-  // Procura oponente com overall similar (±5 pontos)
+  // Procura oponente com overall similar (±20 pontos) - ampliado para encontrar mais rápido
   for (const [oponenteId, oponente] of filaMatchmaking.entries()) {
     if (oponenteId !== userId) {
       const diferencaOverall = Math.abs(oponente.tecnicoOverall - jogador.tecnicoOverall)
-      if (diferencaOverall <= 5) {
+      if (diferencaOverall <= 20) {
         // Remove ambos da fila
         filaMatchmaking.delete(userId)
         filaMatchmaking.delete(oponenteId)
@@ -251,8 +251,9 @@ export function removerPartidaEmAndamento(partidaId: string): void {
 // Continua segundo tempo (sincronizado)
 export function continuarSegundoTempo(partidaId: string, userId: string): { sucesso: boolean; noIntervalo: boolean } {
   const partida = partidasEmAndamento.get(partidaId)
+  // Partida contra bot ou antiga não está em partidasEmAndamento - permite continuar localmente
   if (!partida) {
-    return { sucesso: false, noIntervalo: false }
+    return { sucesso: true, noIntervalo: false }
   }
 
   const isJogador1 = partida.jogador1Id === userId

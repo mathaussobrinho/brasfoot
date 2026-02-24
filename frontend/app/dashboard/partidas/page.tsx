@@ -281,6 +281,14 @@ export default function PartidasPage() {
           const data = await response.json()
           setJogadoresOnline(data.jogadores || [])
           setMensagensChat(data.mensagens || [])
+          
+          // Se recebeu desafio de outro jogador, inicia o jogo automaticamente
+          if (data.partidaDesafio?.partida) {
+            setResultado(data.partidaDesafio.partida)
+            iniciarJogo(data.partidaDesafio.partida)
+            setMostrarJogadoresOnline(false)
+            await fetchUserData(token)
+          }
         }
       } catch (error) {
         console.error('Erro ao buscar jogadores online:', error)
@@ -288,7 +296,7 @@ export default function PartidasPage() {
     }
 
     atualizar() // Primeira atualização imediata
-    chatIntervalRef.current = setInterval(atualizar, 3000) // A cada 3 segundos
+    chatIntervalRef.current = setInterval(atualizar, 2000) // A cada 2 segundos (mais rápido para receber desafios)
   }
 
   const enviarMensagem = async () => {
@@ -544,8 +552,8 @@ export default function PartidasPage() {
       const data = await response.json()
       
       if (data.sucesso) {
-        setNoIntervalo(false)
-        setPausado(false)
+        setNoIntervalo(data.noIntervalo ?? false)
+        setPausado(data.noIntervalo ?? false)
       }
     } catch (error) {
       console.error('Erro ao continuar segundo tempo:', error)
@@ -640,7 +648,7 @@ export default function PartidasPage() {
         } catch (error) {
           console.error('Erro ao verificar matchmaking:', error)
         }
-      }, 2000) // Verifica a cada 2 segundos
+      }, 1000) // Verifica a cada 1 segundo para encontrar mais rápido
 
       setMatchmakingInterval(interval)
     } catch (error) {
@@ -1074,8 +1082,8 @@ export default function PartidasPage() {
                 </div>
               )}
 
-              {/* Intervalo */}
-              {noIntervalo && (
+              {/* Intervalo - só mostra no primeiro tempo (antes dos 60s), nunca no final do jogo */}
+              {noIntervalo && tempoDecorrido < 60 && (
                 <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6">
                   <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">⏸️ INTERVALO</h2>
                   <p className="text-gray-700 mb-4 text-center">Primeiro tempo terminou! Faça suas substituições se necessário.</p>
@@ -1102,6 +1110,9 @@ export default function PartidasPage() {
                       Continuar para o 2º Tempo
                     </button>
                   </div>
+                  <p className="text-sm text-gray-500 text-center mt-2">
+                    (Em partida ranqueada: ambos os jogadores precisam clicar para continuar)
+                  </p>
                 </div>
               )}
 
